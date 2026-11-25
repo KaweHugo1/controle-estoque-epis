@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Controle de Estoque e EPIs</title>
+<style>
+  :root {
+    --azul: #1f3a5f; --azul-claro: #e8eef6; --borda: #d5dbe3; --fundo: #f5f7fa;
+    --verde: #1e7e4f; --vermelho: #b3261e; --texto: #1c2430; --cinza: #5f6b7a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: var(--fundo); color: var(--texto); }
+  header { background: var(--azul); color: #fff; padding: 16px 24px; }
+  header h1 { margin: 0; font-size: 1.25rem; }
+  header p { margin: 2px 0 0; font-size: .85rem; opacity: .8; }
+  nav { display: flex; gap: 4px; padding: 0 24px; background: #fff; border-bottom: 1px solid var(--borda);
+        overflow-x: auto; }
+  nav button { border: 0; background: none; padding: 14px 16px; font-size: .95rem; cursor: pointer;
+               color: var(--cinza); border-bottom: 3px solid transparent; white-space: nowrap; }
+  nav button.ativo { color: var(--azul); border-bottom-color: var(--azul); font-weight: 600; }
+  main { max-width: 1000px; margin: 0 auto; padding: 24px; }
+  section { display: none; }
+  section.ativa { display: block; }
+  .cartao { background: #fff; border: 1px solid var(--borda); border-radius: 10px; padding: 18px; margin-bottom: 20px; }
+  .cartao h2 { margin: 0 0 14px; font-size: 1.05rem; color: var(--azul); }
+  form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; align-items: end; }
+  label { display: flex; flex-direction: column; font-size: .8rem; color: var(--cinza); gap: 4px; }
+  input, select, textarea { padding: 9px 10px; border: 1px solid var(--borda); border-radius: 6px;
+                            font-size: .95rem; font-family: inherit; color: var(--texto); background: #fff; }
+  input:focus, select:focus { outline: 2px solid var(--azul-claro); border-color: var(--azul); }
+  button.primario { background: var(--azul); color: #fff; border: 0; padding: 10px 16px; border-radius: 6px;
+                    font-size: .95rem; cursor: pointer; }
+  button.primario:hover { background: #16304f; }
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th, td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--borda); }
+  th { color: var(--cinza); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
+  .tabela-scroll { overflow-x: auto; }
+  .vazio { color: var(--cinza); padding: 14px 4px; font-size: .9rem; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+  .badge.baixo { background: #fde7e5; color: var(--vermelho); }
+  .badge.ok { background: #e2f4ea; color: var(--verde); }
+  .badge.epi { background: #e8eef6; color: var(--azul); }
+  .badge.material { background: #f1ecdf; color: #7a5b12; }
+  .alerta { background: #fde7e5; color: var(--vermelho); border: 1px solid #f5c2be; padding: 10px 14px;
+            border-radius: 8px; margin-bottom: 16px; font-size: .9rem; }
+  #toast { position: fixed; right: 20px; bottom: 20px; padding: 12px 18px; border-radius: 8px; color: #fff;
+           font-size: .92rem; opacity: 0; transform: translateY(10px); transition: .25s; pointer-events: none;
+           max-width: 340px; }
+  #toast.visivel { opacity: 1; transform: none; }
+  #toast.ok { background: var(--verde); }
+  #toast.erro { background: var(--vermelho); }
+  .entrada { color: var(--verde); font-weight: 600; }
+  .retirada { color: var(--vermelho); font-weight: 600; }
+  .devolucao { color: var(--azul); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Controle de Estoque e EPIs</h1>
+  <p>Materiais, EPIs, demandas de serviço e retiradas por funcionário</p>
+</header>
+
+<nav id="abas">
+  <button data-aba="estoque" class="ativo">Estoque</button>
+  <button data-aba="movimentar">Movimentar</button>
+  <button data-aba="funcionarios">Funcionários</button>
+  <button data-aba="demandas">Demandas</button>
+  <button data-aba="historico">Histórico</button>
+</nav>
+
+<main>
+
+  <!-- ESTOQUE -->
+  <section id="estoque" class="ativa">
+    <div id="alerta-baixo"></div>
+    <div class="cartao">
+      <h2>Novo item</h2>
+      <form id="form-item">
+        <label>Nome <input name="nome" required></label>
+        <label>Tipo
+          <select name="tipo"><option value="MATERIAL">Material</option><option value="EPI">EPI</option></select>
+        </label>
+        <label>Unidade <input name="unidade" value="un" required></label>
+        <label>Estoque mínimo <input name="estoque_minimo" type="number" min="0" value="0" required></label>
+        <label>CA (só para EPI) <input name="ca"></label>
+        <button class="primario" type="submit">Cadastrar</button>
+      </form>
+    </div>
+    <div class="cartao">
+      <h2>Itens em estoque</h2>
+      <div class="tabela-scroll" id="tabela-itens"></div>
+    </div>
+  </section>
+
+  <!-- MOVIMENTAR -->
+  <section id="movimentar">
+    <div class="cartao">
+      <h2>Registrar movimentação</h2>
+      <form id="form-mov">
+        <label>Tipo
+          <select name="tipo" id="mov-tipo">
+            <option value="RETIRADA">Retirada</option>
+            <option value="ENTRADA">Entrada (compra/reposição)</option>
+            <option value="DEVOLUCAO">Devolução</option>
+          </select>
+        </label>
+        <label>Item <select name="item_id" id="mov-item" required></select></label>
+        <label>Funcionário <select name="funcionario_id" id="mov-func"></select></label>
+        <label>Demanda (opcional) <select name="demanda_id" id="mov-dem"></select></label>
+        <label>Quantidade <input name="quantidade" type="number" min="1" value="1" required></label>
+        <label>Observação <input name="observacao"></label>
+        <button class="primario" type="submit">Registrar</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- FUNCIONÁRIOS -->
+  <section id="funcionarios">
+    <div class="cartao">
+      <h2>Novo funcionário</h2>
+      <form id="form-func">
+        <label>Nome <input name="nome" required></label>
+        <label>Matrícula <input name="matricula" required></label>
+        <label>Setor <input name="setor"></label>
+        <button class="primario" type="submit">Cadastrar</button>
+      </form>
+    </div>
+    <div class="cartao">
+      <h2>Funcionários</h2>
+      <div class="tabela-scroll" id="tabela-func"></div>
+    </div>
+  </section>
+
+  <!-- DEMANDAS -->
+  <section id="demandas">
+    <div class="cartao">
+      <h2>Nova demanda de serviço</h2>
+      <form id="form-dem">
+        <label>Título <input name="titulo" required></label>
+        <label>Descrição <input name="descricao"></label>
+        <label>Responsável <select name="responsavel_id" id="dem-resp"></select></label>
+        <button class="primario" type="submit">Criar</button>
+      </form>
+    </div>
+    <div class="cartao">
+      <h2>Demandas</h2>
+      <div class="tabela-scroll" id="tabela-dem"></div>
+    </div>
+  </section>
+
+  <!-- HISTÓRICO -->
+  <section id="historico">
+    <div class="cartao">
+      <h2>Filtros</h2>
+      <form id="form-hist">
+        <label>Funcionário <select name="funcionario_id" id="hist-func"></select></label>
+        <label>Item <select name="item_id" id="hist-item"></select></label>
+        <label>Demanda <select name="demanda_id" id="hist-dem"></select></label>
+        <button class="primario" type="submit">Filtrar</button>
+      </form>
+    </div>
+    <div class="cartao">
+      <h2>Movimentações</h2>
+      <div class="tabela-scroll" id="tabela-hist"></div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+// ---------- utilidades ----------
+const $ = (id) => document.getElementById(id);
+
+// Escapa texto antes de colocar em HTML (evita injeção de código)
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+let toastTimer;
+function aviso(msg, tipo = "ok") {
+  const t = $("toast");
+  t.textContent = msg;
+  t.className = "visivel " + tipo;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.className = ""), 3500);
+}
+
+async function api(caminho, opcoes = {}) {
+  const resp = await fetch(caminho, {
+    headers: { "Content-Type": "application/json" },
+    ...opcoes,
+  });
+  if (!resp.ok) {
+    let msg = resp.statusText;
+    try {
+      const erro = await resp.json();
+      msg = Array.isArray(erro.detail) ? erro.detail.map((d) => d.msg).join("; ") : erro.detail;
+    } catch (_) { /* resposta sem JSON */ }
+    throw new Error(msg);
+  }
+  return resp.json();
+}
+
+// Lê um formulário e devolve um objeto; campos vazios viram null
+function lerForm(form, numericos = []) {
+  const dados = {};
+  new FormData(form).forEach((valor, chave) => {
+    valor = String(valor).trim();
+    if (valor === "") dados[chave] = null;
+    else dados[chave] = numericos.includes(chave) ? Number(valor) : valor;
+  });
+  return dados;
+}
+
+function tabela(colunas, linhas, vazio) {
+  if (!linhas.length) return `<div class="vazio">${esc(vazio)}</div>`;
+  const cab = colunas.map((c) => `<th>${esc(c)}</th>`).join("");
+  return `<table><thead><tr>${cab}</tr></thead><tbody>${linhas.join("")}</tbody></table>`;
+}
+
+// ---------- estado ----------
+let itens = [], funcionarios = [], demandas = [];
+
+function opcoes(lista, rotulo, vazioTexto) {
+  const primeira = vazioTexto !== undefined ? `<option value="">${esc(vazioTexto)}</option>` : "";
+  return primeira + lista.map((x) => `<option value="${x.id}">${esc(rotulo(x))}</option>`).join("");
+}
+
+async function carregarTudo() {
+  [itens, funcionarios, demandas] = await Promise.all([
+    api("/itens"), api("/funcionarios"), api("/demandas"),
+  ]);
+  renderEstoque();
+  renderFuncionarios();
+  renderDemandas();
+  renderSelects();
+  carregarHistorico();
+}
+
+// ---------- renderizações ----------
+function renderEstoque() {
+  const baixos = itens.filter((i) => i.quantidade_estoque <= i.estoque_minimo);
+  $("alerta-baixo").innerHTML = baixos.length
+    ? `<div class="alerta"><b>Estoque baixo:</b> ${baixos.map((i) => esc(i.nome)).join(", ")}</div>`
+    : "";
+
+  const linhas = itens.map((i) => {
+    const baixo = i.quantidade_estoque <= i.estoque_minimo;
+    return `<tr>
+      <td>${esc(i.nome)}</td>
+      <td><span class="badge ${i.tipo === "EPI" ? "epi" : "material"}">${esc(i.tipo)}</span></td>
+      <td>${i.quantidade_estoque} ${esc(i.unidade)}</td>
+      <td>${i.estoque_minimo}</td>
+      <td>${esc(i.ca || "—")}</td>
+      <td><span class="badge ${baixo ? "baixo" : "ok"}">${baixo ? "Estoque baixo" : "OK"}</span></td>
+    </tr>`;
+  });
+  $("tabela-itens").innerHTML = tabela(
+    ["Item", "Tipo", "Em estoque", "Mínimo", "CA", "Situação"], linhas, "Nenhum item cadastrado ainda.");
+}
+
+function renderFuncionarios() {
+  const linhas = funcionarios.map((f) =>
+    `<tr><td>${esc(f.nome)}</td><td>${esc(f.matricula)}</td><td>${esc(f.setor || "—")}</td></tr>`);
+  $("tabela-func").innerHTML = tabela(["Nome", "Matrícula", "Setor"], linhas, "Nenhum funcionário cadastrado ainda.");
+}
+
+const STATUS = { ABERTA: "Aberta", EM_ANDAMENTO: "Em andamento", CONCLUIDA: "Concluída", CANCELADA: "Cancelada" };
+
+function renderDemandas() {
+  const linhas = demandas.map((d) => {
+    const resp = funcionarios.find((f) => f.id === d.responsavel_id);
+    const seletor = Object.entries(STATUS).map(([v, r]) =>
+      `<option value="${v}" ${v === d.status ? "selected" : ""}>${r}</option>`).join("");
+    return `<tr>
+      <td>${esc(d.titulo)}<br><small style="color:var(--cinza)">${esc(d.descricao || "")}</small></td>
+      <td>${esc(resp ? resp.nome : "—")}</td>
+      <td>${esc(d.criada_em)}</td>
+      <td><select data-demanda="${d.id}">${seletor}</select></td>
+    </tr>`;
+  });
+  $("tabela-dem").innerHTML = tabela(["Demanda", "Responsável", "Criada em", "Status"], linhas, "Nenhuma demanda criada ainda.");
+}
+
+function renderSelects() {
+  const nomeItem = (i) => `${i.nome} (${i.quantidade_estoque} ${i.unidade})`;
+  $("mov-item").innerHTML = opcoes(itens, nomeItem);
+  $("mov-func").innerHTML = opcoes(funcionarios, (f) => `${f.nome} (${f.matricula})`, "— selecione —");
+  $("mov-dem").innerHTML = opcoes(demandas, (d) => d.titulo, "— nenhuma —");
+  $("dem-resp").innerHTML = opcoes(funcionarios, (f) => f.nome, "— sem responsável —");
+  $("hist-func").innerHTML = opcoes(funcionarios, (f) => f.nome, "Todos");
+  $("hist-item").innerHTML = opcoes(itens, (i) => i.nome, "Todos");
+  $("hist-dem").innerHTML = opcoes(demandas, (d) => d.titulo, "Todas");
+}
+
+async function carregarHistorico() {
+  const p = new URLSearchParams();
+  if ($("hist-func").value) p.set("funcionario_id", $("hist-func").value);
+  if ($("hist-item").value) p.set("item_id", $("hist-item").value);
+  if ($("hist-dem").value) p.set("demanda_id", $("hist-dem").value);
+  try {
+    const mov = await api("/movimentacoes?" + p.toString());
+    const linhas = mov.map((m) => `<tr>
+      <td>${esc(m.data_hora)}</td>
+      <td class="${m.tipo.toLowerCase()}">${esc(m.tipo)}</td>
+      <td>${esc(m.item)}</td>
+      <td>${m.quantidade}</td>
+      <td>${esc(m.funcionario || "—")}</td>
+      <td>${esc(m.demanda || "—")}</td>
+    </tr>`);
+    $("tabela-hist").innerHTML = tabela(
+      ["Data/hora", "Tipo", "Item", "Qtd", "Funcionário", "Demanda"], linhas, "Nenhuma movimentação encontrada.");
+  } catch (e) {
+    aviso(e.message, "erro");
+  }
+}
+
+// ---------- ações ----------
+async function enviar(evento, caminho, corpo, mensagem, depois) {
+  evento.preventDefault();
+  const form = evento.target;
+  try {
+    await api(caminho, { method: "POST", body: JSON.stringify(corpo) });
+    form.reset();
+    aviso(mensagem);
+    await carregarTudo();
+    if (depois) depois();
+  } catch (e) {
+    aviso(e.message, "erro");
+  }
+}
+
+$("form-item").addEventListener("submit", (e) =>
+  enviar(e, "/itens", lerForm(e.target, ["estoque_minimo"]), "Item cadastrado!"));
+
+$("form-func").addEventListener("submit", (e) =>
+  enviar(e, "/funcionarios", lerForm(e.target), "Funcionário cadastrado!"));
+
+$("form-dem").addEventListener("submit", (e) =>
+  enviar(e, "/demandas", lerForm(e.target, ["responsavel_id"]), "Demanda criada!"));
+
+$("form-mov").addEventListener("submit", (e) =>
+  enviar(e, "/movimentacoes",
+    lerForm(e.target, ["item_id", "funcionario_id", "demanda_id", "quantidade"]),
+    "Movimentação registrada!"));
+
+$("form-hist").addEventListener("submit", (e) => { e.preventDefault(); carregarHistorico(); });
+
+// Mudar o status de uma demanda
+$("tabela-dem").addEventListener("change", async (e) => {
+  const id = e.target.dataset.demanda;
+  if (!id) return;
+  try {
+    await api(`/demandas/${id}/status`, { method: "PATCH", body: JSON.stringify({ status: e.target.value }) });
+    aviso("Status atualizado!");
+    await carregarTudo();
+  } catch (erro) {
+    aviso(erro.message, "erro");
+  }
+});
+
+// Navegação por abas
+$("abas").addEventListener("click", (e) => {
+  const aba = e.target.dataset.aba;
+  if (!aba) return;
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("ativo", b === e.target));
+  document.querySelectorAll("section").forEach((s) => s.classList.toggle("ativa", s.id === aba));
+  if (aba === "historico") carregarHistorico();
+});
+
+carregarTudo().catch((e) => aviso("Não foi possível carregar os dados: " + e.message, "erro"));
+</script>
+</body>
+</html>
