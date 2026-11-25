@@ -36,4 +36,7 @@ python -c "import sqlite3; c=sqlite3.connect('estoque.db'); c.executescript(open
 
 ## Tecnologias
 
-Python · FastAPI · SQLite · SQL (triggers e views)
+  Python 
+  FastAPI
+  SQLite 
+  SQL (triggers e views)
