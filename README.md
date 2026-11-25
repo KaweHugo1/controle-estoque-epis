@@ -12,10 +12,6 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-Abra http://127.0.0.1:8000/docs para testar todas as rotas.
-
-Dados de exemplo (opcional), depois de rodar a API uma vez:
-
 ```bash
 python -c "import sqlite3; c=sqlite3.connect('estoque.db'); c.executescript(open('seed.sql', encoding='utf-8').read()); c.commit()"
 ```
